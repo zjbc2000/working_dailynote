@@ -167,7 +167,7 @@
     /* ─── Sub-panels (上午/下午) ─── */
     .sub-panels {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
@@ -461,9 +461,6 @@
 
     /* ─── Mobile ─── */
     @media (max-width: 640px) {
-      .sub-panels {
-        grid-template-columns: 1fr;
-      }
 
       .timeline-row {
         grid-template-columns: 60px 1fr;
