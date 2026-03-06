@@ -1,0 +1,844 @@
+<!--
+  @file 每日一寄.html
+  @description 极简文字记录工具，界面柔和优化版，数据存干 localStorage。
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>每日一寄</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ─── Design Tokens ─── */
+    :root {
+      --bg:          #000000;
+      --surface:     #121212;
+      --border:      rgba(255, 255, 255, 0.08);
+      --border-hi:   rgba(255, 255, 255, 0.15);
+      --text:        #e5e5e5;
+      --text-muted:  #a3a3a3;
+      --text-dim:    #737373;
+      --accent:      #38bdf8;
+      --accent-dim:  rgba(56, 189, 248, 0.12);
+      --danger:      #f43f5e;
+      --danger-dim:  rgba(244, 63, 94, 0.1);
+      --radius:      12px;
+      --font:        'JetBrains Mono', 'Courier New', monospace;
+    }
+
+    /* ─── Reset ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { font-size: 16px; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 噪点纹理叠层 */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+      opacity: 0.015;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ─── Layout ─── */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ─── Header ─── */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background 0.3s;
+    }
+
+    .header-date {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      font-weight: 300;
+      letter-spacing: 0.08em;
+    }
+
+    .header-date .weekday {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .header-logo {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.15em;
+      color: var(--text);
+      text-transform: none;
+    }
+
+    .save-indicator {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+      transition: color 0.3s, opacity 0.3s;
+      opacity: 0;
+    }
+
+    .save-indicator.saving { opacity: 1; color: var(--text-muted); }
+    .save-indicator.saved  { opacity: 1; color: var(--accent); }
+
+    /* ─── Panel ─── */
+    .panel {
+      border-bottom: 1px solid var(--border);
+      padding: 32px 0;
+      transition: opacity 0.2s;
+    }
+    
+    .panel:last-child {
+      border-bottom: none;
+    }
+
+    .panel.dragging { opacity: 0.4; }
+    .panel.drag-over { border-top: 2px solid var(--accent); }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      gap: 12px;
+    }
+
+    .panel-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-label .tag {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      background: var(--accent-dim);
+      color: var(--accent);
+      border-radius: 9999px;
+      letter-spacing: 0.08em;
+    }
+
+    .panel-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-date {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
+    }
+
+    /* ─── Sub-panels (上午/下午) ─── */
+    .sub-panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .sub-panel {
+      background: var(--surface);
+      padding: 20px;
+      transition: background 0.3s;
+    }
+    
+    .sub-panel:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .sub-label {
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    .sub-content {
+      font-size: 0.95rem;
+      color: var(--text);
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 60px;
+    }
+
+    .sub-content.empty {
+      color: var(--text-dim);
+      font-style: italic;
+      opacity: 0.7;
+    }
+
+    /* ─── Textarea ─── */
+    textarea {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      resize: none;
+      font-family: var(--font);
+      font-size: 0.95rem;
+      color: var(--text);
+      line-height: 1.8;
+      min-height: 100px;
+      caret-color: var(--accent);
+    }
+
+    textarea::placeholder {
+      color: var(--text-dim);
+      opacity: 0.6;
+    }
+
+    /* ─── Timeline ─── */
+    .timeline-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      transition: color 0.2s, background 0.2s;
+    }
+
+    .timeline-toggle:hover { 
+      color: var(--accent); 
+      background: var(--accent-dim);
+    }
+
+    .timeline-toggle .arrow {
+      display: inline-block;
+      transition: transform 0.2s;
+      font-size: 0.875rem;
+    }
+
+    .timeline-toggle.open .arrow { transform: rotate(180deg); }
+
+    .timeline-list {
+      display: none;
+      flex-direction: column;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .timeline-list.open { display: flex; }
+
+    .timeline-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 1fr;
+      gap: 0;
+      background: var(--surface);
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .timeline-row:hover { background: rgba(255, 255, 255, 0.04); }
+
+    .timeline-row.expanded { background: rgba(255, 255, 255, 0.02); }
+
+    .timeline-cell {
+      padding: 14px 16px;
+      font-size: 0.875rem;
+      color: var(--text);
+      border-right: 1px solid var(--border);
+      line-height: 1.6;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .timeline-cell:last-child { border-right: none; }
+
+    .timeline-cell .cell-label {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .timeline-cell.date-cell {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .timeline-detail {
+      display: none;
+      grid-column: 1 / -1;
+      grid-template-columns: 80px 1fr 1fr;
+      background: var(--surface);
+      border-top: 1px dashed var(--border);
+    }
+
+    .timeline-row.expanded + .timeline-detail { display: grid; }
+
+    .timeline-detail .timeline-cell {
+      white-space: pre-wrap;
+      overflow: visible;
+      padding: 20px 16px;
+      color: var(--text-muted);
+    }
+
+    /* ─── Custom Panels ─── */
+    .custom-panel {
+      border-bottom: 1px solid var(--border);
+      padding: 32px 0;
+      cursor: default;
+    }
+
+    .custom-panel.dragging { opacity: 0.4; cursor: grabbing; }
+    .custom-panel.drag-over-top { border-top: 2px solid var(--accent); }
+    .custom-panel.drag-over-bottom { border-bottom: 2px solid var(--accent); }
+
+    .custom-panel .panel-header {
+      margin-bottom: 16px;
+    }
+
+    .panel-title-input {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      outline: none;
+      font-family: var(--font);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      min-width: 60px;
+      width: auto;
+      max-width: 200px;
+      caret-color: var(--accent);
+      padding: 4px 8px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .panel-title-input:hover { background: rgba(255, 255, 255, 0.05); }
+    .panel-title-input:focus { 
+      color: var(--text); 
+      background: var(--surface);
+      border-color: var(--border-hi);
+    }
+
+    .custom-panel textarea {
+      min-height: 80px;
+      background: var(--surface);
+      padding: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      transition: border-color 0.3s;
+    }
+    
+    .custom-panel textarea:focus {
+      border-color: var(--border-hi);
+    }
+
+    /* ─── Action Buttons ─── */
+    .btn {
+      font-family: var(--font);
+      font-size: 0.8rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      border: 1px solid transparent;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      background: none;
+    }
+
+    .btn-ghost {
+      color: var(--text-dim);
+      border-color: var(--border);
+    }
+
+    .btn-ghost:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-hi);
+    }
+
+    .btn-danger {
+      color: var(--text-dim);
+    }
+
+    .btn-danger:hover {
+      color: var(--danger);
+      background: var(--danger-dim);
+    }
+
+    .btn-accent {
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .btn-accent:hover {
+      background: rgba(56, 189, 248, 0.2);
+    }
+
+    .btn-drag {
+      color: var(--text-dim);
+      cursor: grab;
+      padding: 4px;
+    }
+
+    .btn-drag:hover { color: var(--text-muted); background: rgba(255, 255, 255, 0.05); }
+    .btn-drag:active { cursor: grabbing; }
+
+    /* ─── Add Panel Row ─── */
+    .add-panel-row {
+      padding: 32px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ─── Empty State ─── */
+    .empty-state {
+      color: var(--text-dim);
+      font-size: 0.875rem;
+      font-style: italic;
+      padding: 8px 0;
+    }
+
+    /* ─── Mobile ─── */
+    @media (max-width: 640px) {
+      .sub-panels {
+        grid-template-columns: 1fr;
+      }
+
+      .timeline-row {
+        grid-template-columns: 60px 1fr;
+      }
+
+      .timeline-row .timeline-cell:last-child {
+        display: none;
+      }
+
+      .timeline-detail {
+        grid-template-columns: 60px 1fr;
+      }
+
+      .timeline-detail .timeline-cell:last-child {
+        display: none;
+      }
+    }
+
+    /* ─── Scrollbar ─── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+  </style>
+</head>
+<body>
+
+<!-- ─── Header ─── -->
+<header>
+  <div class="header-date">
+    <span id="hdr-date"></span>
+    <span class="weekday" id="hdr-weekday"></span>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <span class="save-indicator" id="save-indicator">已保存</span>
+    <span class="header-logo">每日一寄</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- ─── 2026 Panel ─── -->
+  <div class="panel" id="panel-2026">
+    <div class="panel-header">
+      <span class="panel-label">
+        2026
+        <span class="tag" id="count-2026">0 条</span>
+      </span>
+      <button class="timeline-toggle" id="toggle-2026" onclick="toggle2026()">
+        展开全部 <span class="arrow">▼</span>
+      </button>
+    </div>
+    <div class="timeline-list" id="timeline-list"></div>
+  </div>
+
+  <!-- ─── Today Panel ─── -->
+  <div class="panel" id="panel-today">
+    <div class="panel-header">
+      <span class="panel-label">
+        Today
+        <span class="tag" id="tag-today"></span>
+      </span>
+      <span class="panel-date" id="today-full"></span>
+    </div>
+    <div class="sub-panels">
+      <div class="sub-panel">
+        <div class="sub-label">上午</div>
+        <textarea id="ta-morning" placeholder="记录今天上午的点滴…" oninput="scheduleAutoSave()"></textarea>
+      </div>
+      <div class="sub-panel">
+        <div class="sub-label">下午</div>
+        <textarea id="ta-afternoon" placeholder="记录今天下午的点滴…" oninput="scheduleAutoSave()"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Yesterday Panel ─── -->
+  <div class="panel" id="panel-yesterday">
+    <div class="panel-header">
+      <span class="panel-label">
+        Yesterday
+        <span class="tag" id="tag-yesterday"></span>
+      </span>
+      <span class="panel-date" id="yesterday-full"></span>
+    </div>
+    <div class="sub-panels">
+      <div class="sub-panel">
+        <div class="sub-label">上午</div>
+        <div class="sub-content" id="yest-morning"></div>
+      </div>
+      <div class="sub-panel">
+        <div class="sub-label">下午</div>
+        <div class="sub-content" id="yest-afternoon"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Custom Panels ─── -->
+  <div id="custom-panels-container"></div>
+
+  <!-- ─── Add Panel ─── -->
+  <div class="add-panel-row">
+    <button class="btn btn-ghost" onclick="addCustomPanel()">+ 新增板块</button>
+  </div>
+
+</div>
+
+<script>
+/** 格式化为YYYY-MM-DD */
+function fmtKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/** 格式化为MM.DD */
+function fmtShort(d) {
+  return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/** 格式化为完整日期 */
+function fmtFull(d) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
+/** 取记录数据 */
+function getRecords() {
+  try { return JSON.parse(localStorage.getItem('meiri_records') || '{}'); }
+  catch { return {}; }
+}
+
+/** 取自定义面板 */
+function getCustomPanels() {
+  try { return JSON.parse(localStorage.getItem('meiri_custom') || '[]'); }
+  catch { return []; }
+}
+
+/** 存记录数据 */
+function saveRecord(dateKey, morning, afternoon) {
+  const records = getRecords();
+  records[dateKey] = { morning, afternoon };
+  localStorage.setItem('meiri_records', JSON.stringify(records));
+}
+
+/** 存自定义面板 */
+function saveCustomPanels(panels) {
+  localStorage.setItem('meiri_custom', JSON.stringify(panels));
+}
+
+const NOW = new Date();
+const TODAY_KEY = fmtKey(NOW);
+const YEST = new Date(NOW); YEST.setDate(YEST.getDate() - 1);
+const YEST_KEY = fmtKey(YEST);
+
+let saveTimer = null;
+let saveEl = document.getElementById('save-indicator');
+
+/** 延时触发保存 */
+function scheduleAutoSave() {
+  clearTimeout(saveTimer);
+  saveEl.className = 'save-indicator saving';
+  saveEl.textContent = '保存中…';
+  saveTimer = setTimeout(flushSave, 800);
+}
+
+/** 立即保存数据 */
+function flushSave() {
+  const morning = document.getElementById('ta-morning').value;
+  const afternoon = document.getElementById('ta-afternoon').value;
+  saveRecord(TODAY_KEY, morning, afternoon);
+  saveCustomPanelsFromDOM();
+  saveEl.className = 'save-indicator saved';
+  saveEl.textContent = '已保存';
+  setTimeout(() => { saveEl.className = 'save-indicator'; }, 1800);
+  render2026();
+}
+
+/** 渲染页头日期 */
+function renderHeader() {
+  const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  document.getElementById('hdr-date').textContent = 
+    `${NOW.getFullYear()}.${String(NOW.getMonth()+1).padStart(2,'0')}.${String(NOW.getDate()).padStart(2,'0')}`;
+  document.getElementById('hdr-weekday').textContent = WEEKDAYS[NOW.getDay()];
+}
+
+/** 渲染今天面板 */
+function renderToday() {
+  document.getElementById('tag-today').textContent = fmtShort(NOW);
+  document.getElementById('today-full').textContent = fmtFull(NOW);
+  const rec = getRecords()[TODAY_KEY] || {};
+  document.getElementById('ta-morning').value = rec.morning || '';
+  document.getElementById('ta-afternoon').value = rec.afternoon || '';
+}
+
+/** 渲染昨天面板 */
+function renderYesterday() {
+  document.getElementById('tag-yesterday').textContent = fmtShort(YEST);
+  document.getElementById('yesterday-full').textContent = fmtFull(YEST);
+  const rec = getRecords()[YEST_KEY] || {};
+  const mEl = document.getElementById('yest-morning');
+  const aEl = document.getElementById('yest-afternoon');
+  mEl.textContent = rec.morning || '暂无记录';
+  mEl.className = rec.morning ? 'sub-content' : 'sub-content empty';
+  aEl.textContent = rec.afternoon || '暂无记录';
+  aEl.className = rec.afternoon ? 'sub-content' : 'sub-content empty';
+}
+
+/** 渲染年度时间线 */
+function render2026() {
+  const entries = Object.entries(getRecords())
+    .filter(([k]) => k.startsWith('2026-'))
+    .sort(([a], [b]) => b.localeCompare(a));
+  
+  document.getElementById('count-2026').textContent = `${entries.length} 条`;
+  const list = document.getElementById('timeline-list');
+  list.innerHTML = '';
+
+  if (!entries.length) {
+    list.innerHTML = '<div class="timeline-cell" style="grid-column:1/-1;color:var(--text-dim);font-style:italic;padding:16px;">暂无记录</div>';
+    return;
+  }
+
+  entries.forEach(([dateKey, rec]) => {
+    const d = new Date(dateKey + 'T00:00:00');
+    const label = `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+    const mPrev = (rec.morning || '').slice(0, 40) + ((rec.morning || '').length > 40 ? '…' : '');
+    const aPrev = (rec.afternoon || '').slice(0, 40) + ((rec.afternoon || '').length > 40 ? '…' : '');
+
+    const row = document.createElement('div');
+    row.className = 'timeline-row';
+    row.innerHTML = `
+      <div class="timeline-cell date-cell">${label}</div>
+      <div class="timeline-cell">
+        <div class="cell-label">上午</div>
+        ${mPrev || '<span style="color:var(--text-dim);font-style:italic">—</span>'}
+      </div>
+      <div class="timeline-cell">
+        <div class="cell-label">下午</div>
+        ${aPrev || '<span style="color:var(--text-dim);font-style:italic">—</span>'}
+      </div>`;
+
+    const detail = document.createElement('div');
+    detail.className = 'timeline-detail';
+    detail.innerHTML = `
+      <div class="timeline-cell date-cell" style="font-size:0.65rem;color:var(--text-dim);">${dateKey}</div>
+      <div class="timeline-cell">${rec.morning || '<span style="color:var(--text-dim);font-style:italic">暂无记录</span>'}</div>
+      <div class="timeline-cell">${rec.afternoon || '<span style="color:var(--text-dim);font-style:italic">暂无记录</span>'}</div>`;
+
+    row.addEventListener('click', () => row.classList.toggle('expanded'));
+    list.appendChild(row);
+    list.appendChild(detail);
+  });
+}
+
+/** 切换时间线显示 */
+function toggle2026() {
+  const btn = document.getElementById('toggle-2026');
+  btn.classList.toggle('open');
+  document.getElementById('timeline-list').classList.toggle('open');
+  btn.childNodes[0].textContent = btn.classList.contains('open') ? '收起全部 ' : '展开全部 ';
+}
+
+let dragSrc = null;
+
+/** 遍历DOM存面板 */
+function saveCustomPanelsFromDOM() {
+  const panels = Array.from(document.querySelectorAll('.custom-panel')).map(el => ({
+    id: el.dataset.id,
+    title: el.querySelector('.panel-title-input').value,
+    content: el.querySelector('textarea').value,
+  }));
+  saveCustomPanels(panels);
+}
+
+/** 生成短ID */
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+/** 创建面板节点 */
+function createPanelNode(panel) {
+  const el = document.createElement('div');
+  el.className = 'custom-panel';
+  el.dataset.id = panel.id;
+  el.draggable = false;
+
+  el.innerHTML = `
+    <div class="panel-header">
+      <span class="panel-label">
+        <button class="btn btn-drag" title="拖拽排序" data-drag-handle>⠿</button>
+        <input class="panel-title-input" value="${escHtml(panel.title)}" placeholder="板块名称" maxlength="20" oninput="scheduleAutoSave()" />
+      </span>
+      <div class="panel-meta">
+        <button class="btn btn-danger" title="删除板块" onclick="removePanel('${panel.id}')">删除</button>
+      </div>
+    </div>
+    <textarea placeholder="在此记录…" oninput="scheduleAutoSave()">${escHtml(panel.content)}</textarea>`;
+
+  const handle = el.querySelector('[data-drag-handle]');
+  handle.addEventListener('mousedown', () => el.draggable = true);
+  handle.addEventListener('mouseup', () => el.draggable = false);
+
+  el.addEventListener('dragstart', e => {
+    dragSrc = el;
+    setTimeout(() => el.classList.add('dragging'), 0);
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  el.addEventListener('dragend', () => {
+    el.classList.remove('dragging');
+    el.draggable = false;
+    document.querySelectorAll('.custom-panel').forEach(p => p.classList.remove('drag-over-top', 'drag-over-bottom'));
+    saveCustomPanelsFromDOM();
+  });
+
+  el.addEventListener('dragover', e => {
+    e.preventDefault();
+    if (!dragSrc || dragSrc === el) return;
+    const isTop = e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2;
+    el.classList.toggle('drag-over-top', isTop);
+    el.classList.toggle('drag-over-bottom', !isTop);
+  });
+
+  el.addEventListener('dragleave', () => el.classList.remove('drag-over-top', 'drag-over-bottom'));
+
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    if (!dragSrc || dragSrc === el) return;
+    const isTop = e.clientY < el.getBoundingClientRect().top + el.offsetHeight / 2;
+    el.classList.remove('drag-over-top', 'drag-over-bottom');
+    el.parentNode.insertBefore(dragSrc, isTop ? el : el.nextSibling);
+  });
+
+  return el;
+}
+
+/** 新增面板 */
+function addCustomPanel() {
+  const node = createPanelNode({ id: uid(), title: '新板块', content: '' });
+  document.getElementById('custom-panels-container').appendChild(node);
+  node.querySelector('.panel-title-input').focus();
+  saveCustomPanelsFromDOM();
+}
+
+/** 删除面板 */
+function removePanel(id) {
+  const el = document.querySelector(`.custom-panel[data-id="${id}"]`);
+  if (el) {
+    el.style.opacity = '0';
+    setTimeout(() => { el.remove(); saveCustomPanelsFromDOM(); }, 200);
+  }
+}
+
+/** 渲染所有自定义面板 */
+function renderCustomPanels() {
+  const container = document.getElementById('custom-panels-container');
+  container.innerHTML = '';
+  getCustomPanels().forEach(p => container.appendChild(createPanelNode(p)));
+}
+
+/** HTML转义防XSS */
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/** 页面初始化 */
+function init() {
+  renderHeader();
+  renderToday();
+  renderYesterday();
+  render2026();
+  renderCustomPanels();
+  window.addEventListener('beforeunload', flushSave);
+}
+
+init();
+</script>
+</body>
+</html>
